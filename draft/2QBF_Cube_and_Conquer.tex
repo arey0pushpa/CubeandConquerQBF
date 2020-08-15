@@ -1,0 +1,113 @@
+% This is samplepaper.tex, a sample chapter demonstrating the
+% LLNCS macro package for Springer Computer Science proceedings;
+% Version 2.20 of 2017/10/04
+%
+\documentclass[runningheads]{llncs}
+%
+\usepackage{graphicx}
+% Used for displaying a sample figure. If possible, figure files should
+% be included in EPS format.
+%
+% If you use the hyperref package, please uncomment the following line
+% to display URLs in blue roman font according to Springer's eBook style:
+% \renewcommand\UrlFont{\color{blue}\rmfamily}
+
+\RequirePackage{amsmath}
+\usepackage{algpseudocode}
+\usepackage{algorithm}
+\usepackage{verbatim,amssymb,amsfonts,amscd,graphicx}
+\usepackage{bussproofs}
+\usepackage{color}
+\usepackage{times}
+\usepackage{placeins}
+\usepackage{thmtools}
+\usepackage[shortlabels]{enumitem} % added/updated by Ankit to cover no space enum
+\usepackage{cite}
+\usepackage{url}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage[justification=justified]{caption}
+
+\spnewtheorem{plaindefinition}{Definition}{\bfseries}{\normalfont}
+
+% GENERAL MACROS
+\def\hy{\hbox{-}\nobreak\hskip0pt} \newcommand{\ellipsis}{$\dots$}
+\newcommand{\SB}{\{\,} \newcommand{\SM}{\;{:}\;} \newcommand{\SE}{\,\}}
+\newcommand{\Card}[1]{|#1|}
+\newcommand{\red}{\color{red}}
+\newcommand{\blue}{\color{blue}}
+\renewcommand{\iff}{\Longleftrightarrow}
+
+% PAPER SPECIFIC MACROS
+\newcommand{\var}{\mathit{var}}
+\newcommand{\lit}{\mathit{lit}}
+\newcommand{\fff}{\varphi}
+\newcommand{\matrixf}{\phi}
+\newcommand{\dom}{\mathit{dom}}
+\newcommand{\qp}{\mathcal{Q}}
+\newcommand{\FFF}{\Phi}
+\newcommand{\GGG}{\Psi}
+\newcommand{\rightOf}{R}
+\newcommand{\Neg}[1]{\overline{#1}}
+\newcommand{\cc}[1]{Cl(#1)}
+\renewcommand{\P}{\mathcal{P}}
+
+\newcommand{\AAA}{\mathcal{A}} \newcommand{\BBB}{\mathcal{B}}
+\newcommand{\CCC}{\mathcal{C}} \newcommand{\DDD}{\mathcal{D}}
+\newcommand{\LLL}{\mathcal{L}} 
+\newcommand{\HHH}{\mathcal{H}}
+\newcommand{\MMM}{\mathcal{M}} \newcommand{\PPP}{\mathcal{P}}
+\newcommand{\QQQ}{\mathcal{Q}}\RequirePackage{amsmath}
+\newcommand{\SSS}{\mathcal{S}} \newcommand{\TTT}{\mathcal{T}}
+\newcommand{\VVV}{\mathcal{V}} \newcommand{\bigoh}{\mathcal{O}}
+
+\usepackage{tikz}
+\usetikzlibrary{tikzmark,decorations.pathreplacing,arrows,shapes,positioning,shadows,trees,shapes.gates.logic.US,arrows.meta,shapes,automata,petri,calc}
+\usetikzlibrary{positioning}
+% ----------------- End of the macros
+
+\begin{document}
+%
+\title{Revisiting the Decision Heuristics for the Look-Ahead Based SAT Solvers\thanks{Supported by organization  XXX.}}
+%
+%\titlerunning{Abbreviated paper title}
+% If the paper title is too long for the running head, you can set
+% an abbreviated paper title here
+%
+\author{Armin Biere\inst{1} \and Ankit Shukla\inst{1}}
+%\orcidID{1111-2222-3333-4444}
+
+\authorrunning{A. Biere et al.}
+% First names are abbreviated in the running head.
+% If there are more than two authors, 'et al.' is used.
+%
+\institute{JKU, Linz, Austria \\
+	\email{biere, ankit.shukla@jku.at}}
+%
+\maketitle              % typeset the header of the contribution
+%
+\begin{abstract}
+The abstract should briefly summarize the contents of the paper in
+150--250 words.
+
+\keywords{First keyword  \and Second keyword \and Another keyword.}
+\end{abstract}
+%
+%
+%
+\section{Introduction} \label{sec:introduction}
+
+\section{Preliminaries} \label{sec:preliminaries}
+
+\section{Renamable Horn CNFs} \label{sec:renamable-horn}
+%
+% ---- Bibliography ----
+%
+% BibTeX users should specify bibliography style 'splncs04'.
+% References will then be sorted and formatted in the correct style.
+
+ \bibliographystyle{splncs04}
+ \bibliography{Bibliographie}
+
+
+\end{document}
