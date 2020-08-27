@@ -13,8 +13,7 @@
 % \renewcommand\UrlFont{\color{blue}\rmfamily}
 
 \RequirePackage{amsmath}
-\usepackage{algpseudocode}
-\usepackage{algorithm}
+
 \usepackage{verbatim,amssymb,amsfonts,amscd,graphicx}
 \usepackage{bussproofs}
 \usepackage{color}
@@ -44,13 +43,17 @@
 \newcommand{\fff}{\varphi}
 \newcommand{\matrixf}{\phi}
 \newcommand{\dom}{\mathit{dom}}
-\newcommand{\qp}{\mathcal{Q}}
-\newcommand{\FFF}{\Phi}
+\newcommand{\qp}{\forall X \exists Y}
+\newcommand{\FFF}{F}
+\newcommand{\CC}{C}
+\newcommand{\BB}{B}
 \newcommand{\GGG}{\Psi}
 \newcommand{\rightOf}{R}
 \newcommand{\Neg}[1]{\overline{#1}}
 \newcommand{\cc}[1]{Cl(#1)}
 \renewcommand{\P}{\mathcal{P}}
+\newcommand{\dec}{\varphi_{dec}}
+\newcommand{\imp}{\varphi_{imp}}
 
 \newcommand{\AAA}{\mathcal{A}} \newcommand{\BBB}{\mathcal{B}}
 \newcommand{\CCC}{\mathcal{C}} \newcommand{\DDD}{\mathcal{D}}
@@ -61,24 +64,42 @@
 \newcommand{\SSS}{\mathcal{S}} \newcommand{\TTT}{\mathcal{T}}
 \newcommand{\VVV}{\mathcal{V}} \newcommand{\bigoh}{\mathcal{O}}
 
+\def\preprocess{\mathsf{Preprocess}}
+%\def\split{\mathsf{SplitProblem}}
+\def\split{\mathsf{GenerateSubproblems}}
+\def\fml{\mathsf{CreateFormula}}
+\def\sat{\mathsf{SAT}}
+\def\look{\mathsf{LookAhead}}
+
+% Tikz 
 \usepackage{tikz}
 \usetikzlibrary{tikzmark,decorations.pathreplacing,arrows,shapes,positioning,shadows,trees,shapes.gates.logic.US,arrows.meta,shapes,automata,petri,calc}
 \usetikzlibrary{positioning}
+
+% Algo
+\usepackage{xspace}
+\usepackage{algpascal}
+\usepackage[ruled,vlined,linesnumbered,noend]{algorithm2e}
+% global change
+\SetKwInput{KwData}{Input}
+\SetKwInput{KwResult}{Output}
+\algnewcommand\TRUE{\textkeyword{true}}
+\algnewcommand\FALSE{\textkeyword{false}}
 % ----------------- End of the macros
 
 \begin{document}
 %
-\title{Cube and Conquer for 2QBF\thanks{Supported by organization  XXX.}}
+\title{Cube and Conquer for 2QBFs\thanks{Supported by organization.}}
 %
 %\titlerunning{Abbreviated paper title}
 % If the paper title is too long for the running head, you can set
 % an abbreviated paper title here
 %
-\author{Oliver Kullmann\inst{1} \and Ankit Shukla\inst{2}}
+\author{Oliver Kullmann\inst{1} \and Ankit Shukla\inst{2} \and Oleg Zaikin\inst{1}}
 \authorrunning{O.~Kullmann, A.~Shukla}
 
 \institute{Swansea University, Swansea, UK\\
-	\email{O.Kullmann@Swansea.ac.uk}
+	\email{O.Kullmann@Swansea.ac.uk, zaikin.icc@gmail.com}
 	\and
 	Johannes Kepler University, Austria\\
 	\email{ankit.shukla@jku.at}
@@ -91,19 +112,94 @@
 \maketitle              % typeset the header of the contribution
 %
 \begin{abstract}
-Cube and Conquer for 2QBF.
+We present a cube-and-conquer approach to solve 2QBFs.
 XXX 
-\keywords{First keyword  \and Second keyword \and Another keyword.}
+\keywords{Cube and Conqer  \and 2QBF \and Branching Heuristics.}
 \end{abstract}
 %
 %
 %
+\setcounter{section}{-1}
+\section{TODOS}
+\label{sec:todos}
+\begin{enumerate}
+	\item For the completeness in the worst case the algorithm \ref{algo:qbfcc} requires every assignment of universal variables to be used. Can we improve the algorithm?
+	\item Use QBF instead of SAT for solving formula from cubes. The cutoff heuristic stops after $k$-number of assignments.
+\end{enumerate}
+
 \section{Introduction} \label{sec:introduction}
+Cube-and-Conquer \cite{HeuleKWB11} is an effective technique to solve hard SAT instances. The approach consists of two-sequential phases: first, use lookahead techniques to partitions a problem into many thousands (or millions) of cubes. This phase is called \textit{cube-phase}.
+Then use a conflict-driven solver to solve the generated subproblems; a \textit{conquer-phase}.
+
+We present a cube-and-conquer approach to solve 2QBFs.
+XXX
 
 \section{Preliminaries} \label{sec:preliminaries}
+XXX
 
-\section{Renamable Horn CNFs} \label{sec:renamable-horn}
-%
+\section{Cube and Conquer for 2QBF} \label{sec:cc-qbf}
+
+The algorithm \ref{algo:qbfcc} takes a 2QBF formula as an input and returns whether the formula is \TRUE\space or \FALSE. First, we split the formula $\FFF$ into subformulas $F_1, \dots, F_n$ using the procedure $\split(\FFF)$. Then, each subformula is independently solved using a SAT solver. If any of the subformula is unsatisfiable the algorithm returns \FALSE\space otherwise returns \TRUE.
+
+\begin{algorithm}[]
+	\DontPrintSemicolon
+	\SetAlgoLined
+	\KwData{A 2QBF formula $\FFF = \qp.\matrixf$}
+	\KwResult{\TRUE \space or \FALSE}
+	%$\FFF^{\prime} = \preprocess (\FFF)$ \;
+	$F_1,\dots,F_n = \split (\FFF)$ \;
+	$R$ = $\sat(F_1); \dots; \sat (F_n)$  // Run SAT solver in parallel \;
+	\eIf{ $\exists r \in R$:
+		$\sat(r)$ == \FALSE \;
+		}
+	{ % 
+		return \FALSE 
+	} % Close If
+	{ % Open Else
+	return \TRUE } 
+	\caption{Cube and Conquer for 2QBF}
+	\label{algo:qbfcc}
+\end{algorithm}
+
+
+The $\split(\FFF)$ procedure partition the input 2QBF formula $\FFF$ into subformulas $F_1, \dots, F_n$. 
+The recursive procedure has four inputs, 2QBF formula $\FFF$, DNF formula $\BB$ (cubes; represented as set of literals), the set of decision literals (denoted by $\dec$) and the set of implied literals (denoted by $\imp$). Implied literals are assignments that were forced by BCP or preprocessing techniques. Initially, $\split$ is called with the input formula $\FFF$ and all the other parameters as empty sets. XXX
+%The cubes $\BB$ cover all subproblems of $\FFF$ that have not been satisfied during the partition procedure.
+%The clauses $C$ are the learnt clauses implied by $F$ and represent refuted branches in the DPLL tree.
+
+\begin{algorithm}[]
+	\DontPrintSemicolon
+	\SetAlgoLined
+	\KwData{$\FFF = \qp.\matrixf$, DNF $\BB = \dec = \imp = \{\}$ \;}
+	\KwResult{Subformulas $F_1,\dots,F_n$ of the formula $\FFF$}
+	$\FFF, \imp$ := $\preprocess (\FFF,\dec,\imp)$  \;
+	\uIf{ $\dec \cup \imp$\xspace falsify a clause in \FFF}{
+	return $\bot$ } 
+	 \uElseIf {cutoff heuristic is triggered} {
+	 	return  $\fml(\FFF, \dec \cup \imp)$} 
+	$l$ :=  $\look(\FFF, \dec \cup \imp)$  \;
+	 := $\fml(\FFF,\BB, \dec \cup \{l\}, \imp)$  \;
+	return $\fml(\FFF,\BB, \dec \cup \{ \neg l\}, \imp)$ \;	
+	
+	\caption{$\split(\FFF,\BB, \dec, \imp)$ }
+	
+\end{algorithm}
+
+
+\section{Related Work} \label{sec:related-work}
+A parallel algorithm for solving 2-QBF was presented in \cite{AspvallLLS96} based on the implication graph.
+
+The concept of dividing the search space into 2 or more disjoint parts is used in parallel QBF solving. A parallel QBF solver consists of multiple copies of a sequential solver and each individual solver is given a small part of the original problem.
+A naive way to divide the input formula is to solve each path in the search tree using a different solver. Example of such solvers XXX
+
+A variant of the guiding path method used in SAT solving
+has been found effective at generating subproblems in parallel QBF solving. In this method a sequential solver instance in a separate computing node is provided with a set of assumptions. Assumptions are predefined variable assignments that the solver has to take into account in the solving process. A Master/Slave Message Passing Interface (MPI) based design is used where master process generates sets of assumptions and distributes them to the solver instances running on the computing nodes.
+
+The first work was of PQSolver \cite{FeldmannMS00}, a distributed theorem-prover for QBFs. Initially, processor 0 starts its work on the input formula. All other processors are idle. Idle processors send requests for work to a randomly selected processor. 
+
+PQSolver was based on the basic DPLL algorithm, without conflict analysis, solution analysis, watched literals, and many
+other advanced techniques. PaQuBE 
+\cite{LewisMSNBG09} rectify these shortcomings. XXX
 % ---- Bibliography ----
 %
 % BibTeX users should specify bibliography style 'splncs04'.
