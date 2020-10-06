@@ -45,8 +45,8 @@
 \newcommand{\dom}{\mathit{dom}}
 \newcommand{\qp}{\forall X \exists Y}
 \newcommand{\FFF}{F}
-\newcommand{\CC}{C}
-\newcommand{\BB}{B}
+\newcommand{\CC}{\mathcal{C}}
+\newcommand{\BB}{\mathcal{B}}
 \newcommand{\GGG}{\Psi}
 \newcommand{\rightOf}{R}
 \newcommand{\Neg}[1]{\overline{#1}}
@@ -71,6 +71,7 @@
 
 
 \def\preprocess{\mathsf{Preprocess}}
+\def\bcp{\mathsf{BCP}}
 %\def\split{\mathsf{SplitProblem}}
 \def\split{\mathsf{GenerateSubproblems}}
 \def\fml{\mathsf{CreateFormula}}
@@ -177,18 +178,18 @@ The recursive procedure has four inputs, 2QBF formula $\FFF$, DNF formula $\BB$ 
 \begin{algorithm}[]
 	\DontPrintSemicolon
 	\SetAlgoLined
-	\KwData{$\FFF = \qp.\matrixf$, DNF $\BB = \dec = \imp = \{\}$ \;}
-	\KwResult{Subformulas $F_1,\dots,F_n$ of the formula $\FFF$}
-	$\FFF, \imp$ := $\preprocess (\FFF,\dec,\imp)$  \;
+	 \KwData{$\FFF = \qp.\matrixf$, DNF $\BB = \dec = \imp = \{\}$ \;}
+	 \KwResult{Subformulas $F_1,\dots,F_n$ of the formula $\FFF$}
+	$\FFF, \imp$ := $\bcp (\FFF,\dec,\imp)$  \;
 	\uIf{ $\dec \cup \imp$\xspace falsify a clause in \FFF}{
-	return $\bot$ } 
+	return $<\BB, \CC \cup \{\neg \dec\}>$ } 
 	 \uElseIf {cutoff heuristic is triggered} {
-	 	return  $\fml(\FFF, \dec \cup \imp)$} 
+	 	return  $\fml(\FFF, \BB \cup \dec, \CC)$} 
 	$l$ :=  $\look(\FFF, \dec \cup \imp)$  \;
-	 := $\fml(\FFF,\BB, \dec \cup \{l\}, \imp)$  \;
-	return $\fml(\FFF,\BB, \dec \cup \{ \neg l\}, \imp)$ \;	
+	$<\BB, \CC>$ := $\split(\FFF,\BB, \CC, \dec \cup \{l\}, \imp)$  \;
+	return $\split(\FFF,\BB, \CC, \dec \cup \{ \neg l\}, \imp)$ \;	
 	
-	\caption{$\split(\FFF,\BB, \dec, \imp)$ }
+	\caption{$\split(\FFF,\BB, \CC, \dec, \imp)$ }
 	
 \end{algorithm}
 

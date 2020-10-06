@@ -66,7 +66,9 @@ enum class Error {
   decision_error = 22,
   formula_is_sat = 23,
   kappa_size_err = 24,
-  var_notin_clause = 25
+  var_notin_clause = 25,
+  file_not_exist = 26,
+  quant_alt = 27
 };
 
 /* Extracting the underlying code of enum-classes (scoped enums) */
@@ -84,6 +86,10 @@ typedef std::vector<lit_t> cl_t;    // clause type
 typedef std::vector<var_t> clv_t;   // clause type
 typedef std::vector<double> cld_t;  // clause type
 
+// Decision variable for the lookahead choice.
+var_t dec_var;
+cld_t SubFml;
+
 class Clause {
  public:
   Clause() {
@@ -95,16 +101,17 @@ class Clause {
   var_t active;
   var_t size;  // actual size of 'literals'
   cl_t literals;
-  var_t head_ctr;
-  var_t tail_ctr;
 };
 
 class Variable {
  public:
   Variable() {
     active = true;
+    pure = false;
   }
   bool active;
+  bool pure;
+  // A variable becomes pure if the size of one of the below set = 0
   cl_t pos_occ_cls;
   cl_t neg_occ_cls;
 };
@@ -426,6 +433,8 @@ void ReadDimacs(const std::string filename) {
   bool p_line = false;
   var_t num_original_clauses = 0;
   var_t biggest_cls_size = 0;
+  char q_line = 'q';
+  var_t q_alt = 0;
   std::string line;
 
   while (std::getline(fin, line)) {
@@ -459,16 +468,32 @@ void ReadDimacs(const std::string filename) {
         active_vars = no_of_vars;
         active_cls = no_of_clauses;
 
-        // Use one based indexing
+        // Use Nat_1 based indexing
         cnf_variables.resize(no_of_vars + 1);
         pos_var_cnt.resize(no_of_vars + 1);
         neg_var_cnt.resize(no_of_vars + 1);
 
-        // std::cout << "c\nc Found 'p cnf " << no_of_vars << ' ' <<
-        // no_of_clauses
-        //<< "' header. \n";
+        std::cout << "c\nc Found 'p cnf " << no_of_vars << ' ' 
+                  << no_of_clauses
+                  << "' header. \n";
         break;
       }
+
+      case 'e': {
+        if (q_line == 'a' || q_line == 'q') {
+          ++q_alt; 
+        }
+        if (q_alt > 2) {
+          std::cerr << "Number of Quantifier Alternations > 1. Input is not a 2QBF.\n" 
+          std::exit(code(Error::quant_alt));
+        }
+        q_line = 'e';   
+      }
+
+      case 'a': {
+
+      }
+
       default: {
         if (p_line == false) {
           std::exit(code(Error::file_pline));
@@ -817,18 +842,55 @@ void InputFileUpdate() {
   active_cls = horn_cls_cnt + sat_cls_cnt;
 }
 
+cld_t ApplyAssmn (cld_t& Fml, cls_t& ass) {
+  // Apply assignment application to the formula
+}
+
+cls_t UnionAss (cls_t& dec, cls_t& impl) {
+  cls_t ass;
+  ass.reserve(dec.size() + impl.size()); // preallocate memory
+  ass.insert(ass.end(), dec.begin(), dec.end());
+  ass.insert(ass.end(), impl.begin(), impl.end());
+  return ass;
+}
+
+cld_t MergeClsSet (cld_t& s1, cd_t& s2) {
+  // Merge using simple for loop
+}
+
+cls_t NegCls (cls_t& cls) {
+  // Implement negation of the cls
+}
+
+// ---- Generate Subformulas -------------
+cls_t GenerateSubFml(cld_t& Fml, cld_t& Cubes, cld_t& Cls, 
+                                cls_t& Dec_var, cls_t& Impl_ass) {
+  UnitConstraintPropogation(Fml, Impl_ass);
+  if ( ApplyAssmnt(Fml, UnionAss (Dec_var, Impl_ass)).empty()) { 
+    Cls.push_back(Dec_var);
+    return SubFml.push_back(ApplyAssmnt (Fml, Cubes, Cls); 
+  }
+  else if (CuttoffHeuristic()) {
+      return CreateFml(Cubes \cups Dec_var, Cls);
+  }
+
+  dec_var = LookAhead(Fml, Dec_var);
+    
+  GenerateSubFml(Fml, Cubes, Cls, Dec_var \cup {dec_var}, Impl_ass); 
+  return GenerateSubFml(Fml, Cubes, Cls, Dec_vari \cup {\neg dec_var}, Impl_ass); 
+}
+
+
 // --- Parse Commandline argument ---
 void show_usage() noexcept {
-  std::cout << "Decision-Heuristics [version 0.0.1]. (C) Copyright 2020 "
-               "\nUsage: ./decision_heuristics [filename] [heuristic: 0 (max "
-               "satisfiable clause), 1 (Jeoslow Wang), "
-               "2 (crh_lookahead), 3 (wbh Lookahead), 4 (Rhorn MaxSAT)]\n";
+  std::cout << "2QBFCC.cpp [version 0.1]. (C) Copyright 2020 "
+               "\nUsage: ./2QBFCC [filename]\n";
   std::exit(0);
 }
 
 // --- Printing basic information about the tool ---
 static void banner() {
-  std::cout << "c WaterMellon SAT Solver based on RHorn Heuristic.\n"
+  std::cout << "c 2QBF Cube and Conquer based Heuristic.\n"
                "c Version: "
             << version
             << "\nc Copyright (c) 2020 Johannes Kepler University.\n";
@@ -842,36 +904,48 @@ void output(const std::string filename) {
   std::exit(0);
 }
 
+// --- File existence check ----//
+bool fileExists (const std::string& name) {
+  struct stat buffer;   
+  return (stat (name.c_str(), &buffer) == 0); 
+}
+
 }  // namespace
 
 int main(const int argc, const char *const argv[]) {
-  if (argc == 1 || argc > 3) {
+  // ---------- [Command Line Arguments Parsing Starts] ------------
+  if (argc == 1 || argc > 2) {
     std::cout << "Invalid number of arguments.\n";
     std::exit(code(Error::invalid_args_count));
   }
+  
   const std::string filename = argv[1];
-  if (argc == 3) {
-    heuristic = std::stoi(argv[2]);
-  }
+  
   if (filename == "-v" or filename == "--version") version_information();
   if (filename == "-h" or filename == "--help") show_usage();
+  // [Command Line Arguments Parsing Ends]
+
   banner();
+  
+  // -------- [Parsing Input Starts] ----------------
   ReadDimacs(filename);
-  while (!unsat_bit) {
-    if (UnitConstraintPropogation() == "UNSAT") break;
-    if (heuristic == 4)
-      if (ClauseActivityUpdate() == "UNSAT") break;
-    lit_t decision_var = VariableSelection();
-    if (decision_var == 0) std::exit(code(Error::decision_error));
-    // TODO: Check how good this random function is
-    if (pick_random_phase()) {
-      decision_var *= -1;
-    }
-    assgn_vars.push_back(decision_var);
-    if (DataStructureUpdate(decision_var) == "UNSAT") break;
-    assert(assgn_vars.size() <= no_of_vars);
-    if (heuristic == 4) InputFileUpdate();
-  }
+  // [Parsing Input Ends]
+
+  // ------- [2QBF-Heuristic Algorithm Starts] ------------ 
+  cld_t Fml, Cubes, Cls;
+  cls_t Dec_var, Impl_ass; 
+  
+  // ------- [Cube Phase Starts] -------------- 
+  GenerateSubFml(Fml, Cubes, Cls, Dec_var, Impl_ass); 
+  // ------- [Cube Phase Ends] -------------- 
+ 
+  // ------- [Conquer Phase Starts] -------------- 
+  Conquer();
+  // ------- [Conquer Phase Ends] -------------- 
+  
+  // [2QBF-Heuristic Algorithm Ends]
+
   output(filename);
+
   return 0;
 }
