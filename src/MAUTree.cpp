@@ -150,8 +150,8 @@ int no_of_leaves = 0;
 
 cl_t pos_var_score;
 cl_t neg_var_score;
-// cl_t uni_pos_cnt;
-// cl_t uni_neg_cnt;
+cl_t pure_lit_score;
+cl_t avars_indx;
 
 std::random_device rd;
 std::mt19937 gen(rd());
@@ -340,7 +340,6 @@ void ReadDimacs(const std::string filename) {
       qbf_variables.resize(no_of_vars + 1);
 
       active_cls = no_of_clauses;
-      active_vars = no_of_vars;
 
       // Use Nat_1 based indexing
       qbf_variables.resize(no_of_vars + 1);
@@ -497,8 +496,21 @@ void ReadDimacs(const std::string filename) {
 
   // initialize it with number of existential variables
   // TODO: Check off by one error
-  pos_var_score.resize(a_vars.size() + 1);
-  neg_var_score.resize(a_vars.size() + 1);
+  pos_var_score.resize(a_vars.size());
+  neg_var_score.resize(a_vars.size());
+  pure_lit_score.resize(a_vars.size());
+  avars_indx.resize(no_of_vars);
+  // Updated to assign only universal variables
+  active_vars = a_vars.size();
+
+  // Initialize the avars_indx
+  // std::iota(avars_indx.begin(), avars_indx.end(), 0);
+  int ida = 0;
+  for (lit_t l : a_vars) {
+    assert(l > 0);
+    avars_indx[l] = ida;
+    ++ida;
+  }
 }
 
 /* / Apply assignment application to the formula
@@ -509,25 +521,177 @@ cld_t ApplyAssmnt(cld_t &Fml, const cls_t &ass) {
   }
 } */
 
+void IncrementVarScore(lit_t l) {
+  if (l > 0) {
+    // TODO: Require mapping the index and the value.
+    pos_var_score[avars_indx[std::abs(l)]] += 1;
+  } else {
+    neg_var_score[avars_indx[std::abs(l)]] += 1;
+    // neg_var_score[std::abs(l)] += 1;
+  }
+}
+
+// Compute the Heuristical Score of each variable
+var_t HeuristicScoreUpdate() {
+  for (lit_t a : a_vars) {
+    assert(a > 0);
+    if (qbf_variables[a].active == 0 || qbf_variables[a].active == 1) {
+      // TODO: Require mapping the index and the value.
+      pos_var_score[avars_indx[a]] == 1;
+      pos_var_score[avars_indx[a]] == 1;
+    }
+  }
+}
+
+// Compute the Heuristical Score of each variable
+var_t HeuristicScore() {
+  std::fill(pos_var_score.begin(), pos_var_score.end(), 0);
+  std::fill(neg_var_score.begin(), neg_var_score.end(), 0);
+
+  for (var_t i = 0; i < a_vars.size(); ++i) {
+    std::fill(pure_lit_score.begin(), pure_lit_score.end(), 0);
+    var_t indx = a_vars[i];
+    cl_t sat_cls_set;
+    if (qbf_variables[indx].active == 0 || qbf_variables[indx].active == 1)
+      continue;
+    // Clauses where the variable occurs positive and negative
+    int pidx = 0;
+    sat_cls_set = qbf_variables[indx].pos_occ_cls;
+    for (int c = 0; c < qbf_clauses.size(); ++c) {
+      if (qbf_clauses[c].active == 0)
+        continue;
+      if (c == sat_cls_set[pidx]) {
+        ++pidx;
+        continue;
+      }
+      for (lit_t l : qbf_clauses[c].a_literals) {
+        if (qbf_variables[std::abs(l)].active == 0 ||
+            qbf_variables[std::abs(l)].active == 1)
+          continue;
+        assert(0 <= pure_lit_score[avars_indx[std::abs(l)]] <= 3);
+        if (pure_lit_score[avars_indx[std::abs(l)]] == 3)
+          continue;
+        if (l > 0) {
+          // 1 : Negative, 2 : positive, 3: Not pure
+          if (pure_lit_score[avars_indx[std::abs(l)]] == 0) {
+            pure_lit_score[avars_indx[std::abs(l)]] = 2;
+          } else if (pure_lit_score[avars_indx[std::abs(l)]] == 1) {
+            pure_lit_score[avars_indx[std::abs(l)]] = 3;
+          }
+        } else {
+          if (pure_lit_score[avars_indx[std::abs(l)]] == 0) {
+            pure_lit_score[avars_indx[std::abs(l)]] = 1;
+          } else if (pure_lit_score[avars_indx[std::abs(l)]] == 2) {
+            pure_lit_score[avars_indx[std::abs(l)]] = 3;
+          }
+        }
+      }
+    }
+    int pscore = 0;
+    for (int m = 0; m < pure_lit_score.size(); ++m) {
+      if (pure_lit_score[m] == 1 || pure_lit_score[m] == 2)
+        ++pscore;
+    }
+    pos_var_score[avars_indx[a_vars[i]]] = pscore;
+  }
+
+  for (var_t i = 0; i < a_vars.size(); ++i) {
+    std::fill(pure_lit_score.begin(), pure_lit_score.end(), 0);
+    var_t indx = a_vars[i];
+    cl_t sat_cls_set;
+    if (qbf_variables[indx].active == 0 || qbf_variables[indx].active == 1)
+      continue;
+    // Clauses where the variable occurs positive and negative
+    int nidx = 0;
+    sat_cls_set = qbf_variables[indx].neg_occ_cls;
+    for (int c = 0; c < qbf_clauses.size(); ++c) {
+      if (qbf_clauses[c].active == 0)
+        continue;
+      if (c == sat_cls_set[nidx]) {
+        ++nidx;
+        continue;
+      }
+      for (lit_t l : qbf_clauses[c].a_literals) {
+        if (qbf_variables[std::abs(l)].active == 0 ||
+            qbf_variables[std::abs(l)].active == 1)
+          continue;
+        assert(0 <= pure_lit_score[avars_indx[std::abs(l)]] <= 3);
+        if (pure_lit_score[avars_indx[std::abs(l)]] == 3)
+          continue;
+        if (l > 0) {
+          // 1 : Negative, 2 : positive, 3: Not pure
+          if (pure_lit_score[avars_indx[std::abs(l)]] == 0) {
+            pure_lit_score[avars_indx[std::abs(l)]] = 2;
+          } else if (pure_lit_score[avars_indx[std::abs(l)]] == 1) {
+            pure_lit_score[avars_indx[std::abs(l)]] = 3;
+          }
+        } else {
+          if (pure_lit_score[avars_indx[std::abs(l)]] == 0) {
+            pure_lit_score[avars_indx[std::abs(l)]] = 1;
+          } else if (pure_lit_score[avars_indx[std::abs(l)]] == 2) {
+            pure_lit_score[avars_indx[std::abs(l)]] = 3;
+          }
+        }
+      }
+    }
+    int nscore = 0;
+    for (int m = 0; m < pure_lit_score.size(); ++m) {
+      if (pure_lit_score[m] == 1 || pure_lit_score[m] == 2)
+        ++nscore;
+    }
+    neg_var_score[avars_indx[a_vars[i]]] = nscore;
+  }
+}
+
+// During elimination calulate the pre lits
+var_t PureLitElimScore() {
+  std::fill(pos_var_score.begin(), pos_var_score.end(), 0);
+  std::fill(neg_var_score.begin(), neg_var_score.end(), 0);
+
+  var_t total_active_cls = 0;
+
+  for (var_t i = 0; i < qbf_clauses.size(); ++i) {
+    if (qbf_clauses[i].active != 1) {
+      continue;
+    } else {
+      ++total_active_cls;
+      for (var_t j = 0; j < qbf_clauses[i].a_literals.size(); ++j) {
+        lit_t l = qbf_clauses[i].a_literals[j];
+        if (qbf_variables[std::abs(l)].active == 0 ||
+            qbf_variables[std::abs(l)].active == 1)
+          continue;
+        IncrementVarScore(l);
+      }
+    }
+  }
+
+  if (total_active_cls == 0) {
+    formula_is_sat();
+  }
+}
+
 // Pure Literal Elimination
 void PureLitElim(cls_t &Impl_ass, cl_t &Impl_lvl, cl_t &Assgn_lits) {
   cl_t impl_vars;
   var_t pureCount = 0;
+  PureLitElimScore();
   for (var_t i = 0; i < a_vars.size(); ++i) {
-    if (qbf_variables[a_vars[i]].active == 0 ||
-        qbf_variables[a_vars[i]].active == 1)
+    var_t indx = a_vars[i];
+    if (qbf_variables[indx].active == 0 || qbf_variables[indx].active == 1)
       continue;
-    if (pos_var_score[i] == 0 || neg_var_score[i] == 0) {
-      if (pos_var_score[i] == 0) {
+    if (pos_var_score[avars_indx[indx]] == 0 ||
+        neg_var_score[avars_indx[indx]] == 0) {
+      if (pos_var_score[avars_indx[indx]] == 0) {
         impl_vars.push_back(a_vars[i]);
         // Below is Incorrect> TODO avoid redoing this process in
         // DataStructureUpdate
-        qbf_variables[a_vars[i]].active = 1;
+        qbf_variables[indx].active = 1;
       } else {
         impl_vars.push_back(-a_vars[i]);
-        qbf_variables[a_vars[i]].active = 0;
+        qbf_variables[indx].active = 0;
       }
       ++pureCount;
+      --active_vars; // Only Universal variable for now
     }
   }
   Impl_ass.push_back(impl_vars);
@@ -544,8 +708,11 @@ std::string DataStructureUpdate(cls_t &Impl_ass, cl_t &Impl_lvl,
     std::exit(code(Error::variable_value));
 
   // Remove the assigned variable from active vars
-  dvar ? qbf_variables[std::abs(dvar)].active = 1
-       : qbf_variables[std::abs(dvar)].active = 0;
+  if (dvar > 0) {
+    qbf_variables[std::abs(dvar)].active = 1;
+  } else {
+    qbf_variables[std::abs(dvar)].active = 0;
+  }
   assert(active_vars > 0);
   --active_vars;
   // Clauses where the variable occurs positive and negative
@@ -568,7 +735,7 @@ std::string DataStructureUpdate(cls_t &Impl_ass, cl_t &Impl_lvl,
     qbf_clauses[c].active = 0;
   }
   // Implemet early exit based on number of clauses/ i.e active_cls == 0
-  if (active_cls == 0) {
+  if (active_cls == 0 || active_vars == 0) {
     // We do not handle SAT formula checking for heuristic 4 and 5
     unsat_bit = true;
     return "UNSAT";
@@ -598,59 +765,33 @@ cl_t NegCls(cl_t &cls) {
   return neg_cls;
 }
 
-void IncrementVarScore(lit_t l) {
-  if (l > 0) {
-    pos_var_score[std::abs(l)] += 1;
-  } else {
-    neg_var_score[std::abs(l)] += 1;
-  }
-}
-
-// Compute the Heuristical Score of each variable
-var_t HeuristicScore() {
-  std::fill(pos_var_score.begin(), pos_var_score.end(), 0);
-  std::fill(neg_var_score.begin(), neg_var_score.end(), 0);
-
-  var_t total_active_cls = 0;
-
-  for (var_t i = 0; i < qbf_clauses.size(); ++i) {
-    if (qbf_clauses[i].active != 1) {
-      continue;
-    } else {
-      ++total_active_cls;
-      for (var_t j = 0; j < qbf_clauses[i].a_literals.size(); ++j) {
-        lit_t l = qbf_clauses[i].a_literals[j];
-        if (qbf_variables[std::abs(l)].active == 0 ||
-            qbf_variables[std::abs(l)].active == 1)
-          continue;
-        IncrementVarScore(l);
-      }
-    }
-  }
-
-  if (total_active_cls == 0) {
-    formula_is_sat();
-  }
-}
-
 var_t VariableSelection() {
-  var_t top_var = 0;
+  lit_t top_var = -1;
   var_t top_var_cnt =
       0; // be careful be update it when change the heuristic val
   var_t max_pol;
   assert(pos_var_score.size() == neg_var_score.size());
-  for (var_t var = 1; var < pos_var_score.size(); ++var) {
-    if (qbf_variables[var].active == 0 || qbf_variables[var].active == 1)
+  for (var_t i = 0; i < pos_var_score.size(); ++i) {
+    if (qbf_variables[a_vars[i]].active == 0 ||
+        qbf_variables[a_vars[i]].active == 1)
       continue;
-    max_pol = pos_var_score[var] * neg_var_score[var];
+    max_pol = pos_var_score[i] * neg_var_score[i];
+    // Degen case handling to select first variable
+    if (max_pol == top_var_cnt && top_var == -1) {
+      top_var_cnt = max_pol;
+      top_var = i;
+    }
     if (max_pol < top_var_cnt) {
       continue;
     } else {
       top_var_cnt = max_pol;
-      top_var = var;
+      top_var = i;
     }
   }
-  return top_var;
+  // If this is violated then the all vars are already assigned
+  assert(top_var >= 0);
+  return a_vars[top_var];
+  // return a_vars[avars_indx[top_var]];
 }
 
 // Look Ahead Heuristic
@@ -679,6 +820,7 @@ void BackTrack(cls_t &Impl_ass, cl_t Impl_lvl, cl_t &Assgn_lits, int bl) {
     cl_t sat_cls;
     lit_t dlit = Assgn_lits.back();
     Assgn_lits.erase(Assgn_lits.end() - 1);
+    ++active_vars; // Increase the count to reflect the bt
     if (dlit > 0) {
       sat_cls = qbf_variables[std::abs(dlit)].pos_occ_cls;
     } else {
@@ -703,6 +845,7 @@ void BackTrack(cls_t &Impl_ass, cl_t Impl_lvl, cl_t &Assgn_lits, int bl) {
 
     for (lit_t l : impl_ass) {
       qbf_variables[l].active = 2;
+      ++active_vars; // Increase the count to reflect the bt
     }
 
     --bl;
@@ -718,20 +861,22 @@ int TreeSize(cls_t &Impl_ass, cl_t Impl_lvl, cl_t &Assgn_lits) {
   // PureLitElim(Impl_ass, Impl_lvl, Assgn_lits);
 
   // Step 2: If the unit propogation returns UNSAT exit
-  if (active_cls == 0) {
+  if (active_cls == 0 || active_vars == 0) {
+    std::cout << "\nc The Formula is Solvable without LookAhead.\n";
     return 0; // Input formula is false
   }
 
   // Step 3. Perform Lookahead
-  lit_t l = LookAhead(); // Top node of the Search Tree
+  lit_t l = LookAhead() * -1; // Top node of the Search Tree
   Assgn_lits.push_back(l);
 
   // int psize = qbf_variables[std::abs(l)].pos_occ_cls.size();
   varSwitch.push_back(0);
   bool root_flipped = false;
 
-  // Step 4: Iteration call of the loop. Untill all the combinations are tried
-  while (Assgn_lits.size() == 0) { // Remaining tree
+  // Step 4: Iteration call of the loop. Untill all the combinations are
+  // tried
+  while (Assgn_lits.size() != 0) { // Remaining tree
     // Step 1: Pure Lit Elim
     // PureLitElim(Impl_ass, Impl_lvl, Assgn_lits);
 
@@ -758,8 +903,19 @@ int TreeSize(cls_t &Impl_ass, cl_t Impl_lvl, cl_t &Assgn_lits) {
 
       // Backtrack to the previous decisioon level
       BackTrack(Impl_ass, Impl_lvl, Assgn_lits, alit_size);
+
+      // Switch the polarity of the variable: True branch taken
+      assert(varSwitch.back() == 0);
+      varSwitch.erase(varSwitch.end() - 1);
       varSwitch.push_back(1);
-      Assgn_lits.push_back(-Assgn_lits[alit_size]);
+
+      // Revert back the polarity of the chosen variable
+      l = Assgn_lits.back();
+      Assgn_lits.erase(Assgn_lits.end() - 1);
+      // Assgn_lits.push_back(-Assgn_lits[alit_size]);
+      Assgn_lits.push_back(-l);
+      l *= -1;
+      continue;
     }
 
     // Step 3. Perform Lookahead
