@@ -1,3 +1,4 @@
+
 /*-------------------------------------------------------------------------------------
  * Copyright (C) 2020
  * Johannes Kepler University Linz, Austria
@@ -10,8 +11,30 @@
  * either version 3 of the License, or any later version.
  --------------------------------------------------------------------------------------*/
 
-/* TODOS:
- *.
+/********************************************
+    * Architecture of the Algorithm *
+ *********************************************
+
+ * TreeSize (Impl_cls, Imp_lvl, Assgn_lit) :
+ *    no_of_leaves = 0
+ *    Reduction ()                    // PureLitElim
+ *    l = LookAhead()                 // Provide modular support
+ *    Assign_lit (l)
+ *    while (root_is_not_flipped) [   // Tried both polarity of the top var
+ *        Propagate( l )
+ *        if ( leaf_is_reached) [
+ *            ++ no_of_leaves
+ *            Backtrack ()
+ *            Flip_Polarity(l)
+ *            continue
+ *         ]
+ *
+ *         l = LookAhead()
+ *         Assign_lit (l)
+ *    ]
+ *
+ *    return no_of_leaves
+ *
  */
 
 #include <algorithm>
@@ -92,58 +115,45 @@ typedef std::vector<cl_t> cls_t;   // clause-sets type
 typedef std::vector<var_t> clv_t;  // pos clause type
 typedef std::vector<double> cld_t; // clause type
 
-cl_t varSwitch;
-cls_t satCls; // Assigd lit will imply cls sat
-
+// DataStructure for a clause set: A formula is a "vector of Clause"
 class Clause {
 public:
-  Clause() {
-    active = 1;
-    size = 0;
-  }
+  Clause() { active = 1; }
   var_t active;
-  var_t size; // actual size of 'literals'
   cl_t e_literals;
   cl_t a_literals;
 
-  // Restore Level based
-  int rst_lvl;
+  // Clause was satisfied at assignment level
+  int satisfied_lvl;
 };
 
-class Variable {
+// Literal Class
+class Literal {
 public:
-  Variable() {
+  Literal() {
     active = 2;
-    pure = false;
     quantype = 'a';
-    ass_level = 0;
   }
   char quantype;
   var_t active; // 0: Assgn false, 1: Assigned true, 2 : Unassigned
-  bool pure;
-  var_t ass_level;
-  void initialise_qtype(char c) { quantype = c; }
 
-  // A variable becomes pure if the size of one of the below set = 0
+  // A variable becomes pure if the size of pos_occ_cls or neg_occ_cls is 0
   cl_t pos_occ_cls;
   cl_t neg_occ_cls;
 };
 
 // Data Struture for info about input variables
-std::vector<Variable> qbf_variables;
+std::vector<Literal> qbf_variables;
 // Data structure for info about each input clause
 std::vector<Clause> qbf_clauses;
 
-bool unsat_bit = false; // assignment: 0 = FALSE, 1 = TRUE
-var_t no_of_vars = 0;
-var_t no_of_clauses = 0;
+cl_t varSwitch;
 cl_t e_vars;
 cl_t a_vars;
-cl_t assgn_vars;
+var_t no_of_vars = 0;
+var_t no_of_clauses = 0;
 var_t active_cls = 0;
 var_t active_vars = 0;
-clv_t unit_cls;
-unsigned long long nano_time;
 std::string fname;
 bool prop_fml = false;
 int no_of_leaves = 0;
@@ -152,11 +162,7 @@ cl_t pos_var_score;
 cl_t neg_var_score;
 cl_t pure_lit_score;
 cl_t avars_indx;
-
-std::random_device rd;
-std::mt19937 gen(rd());
-std::uniform_real_distribution<> dis(0,
-                                     2); // uniform distribution between 0 and 1
+bool basic_var_selection = true;
 
 void version_information() noexcept {
   std::cout << program
@@ -237,7 +243,6 @@ inline void extract_int(Clause *cls, std::string line, var_t cls_id) {
 
   cls->e_literals = e_lits;
   cls->a_literals = a_lits;
-  cls->size = e_lits.size() + a_lits.size();
 }
 
 // Basic util
@@ -255,7 +260,8 @@ inline cl_t extract_jint(std::string line) {
       vec_int.push_back(found);
     }
   }
-  // assert vec.back() == 0
+  // Ensure that the a and e line
+  assert(vec_int.back() == 0);
   vec_int.pop_back();
   return vec_int;
 }
@@ -282,13 +288,30 @@ lit_t compare(const void *a, const void *b) {
   return (abs(lit1) - abs(lit2));
 }
 
+cls_t UnionAss(const cls_t &dec, const cls_t &impl) {
+  cls_t ass;
+  ass.reserve(dec.size() + impl.size()); // preallocate memory
+  ass.insert(ass.end(), dec.begin(), dec.end());
+  ass.insert(ass.end(), impl.begin(), impl.end());
+  return ass;
+}
+
+cl_t NegCls(cl_t &cls) {
+  cl_t neg_cls;
+  for (lit_t l : cls) {
+    neg_cls.push_back(-l);
+  }
+  return neg_cls;
+}
+
 void print_filename(std::string filename) {
   std::cout << "c input filename " << filename << "\n";
 }
 
 // --- Print Output --- //
 void output(const std::string filename) {
-  std::cout << "c\nc Program information:\n";
+  // std::cout << "c\nc Program information:\n";
+  // std::cout << "c Input TreeSize\n";
   std::cout << "c " << fname << " " << no_of_leaves << "\n";
   std::exit(0);
 }
@@ -302,7 +325,7 @@ void ReadDimacs(const std::string filename) {
   }
   bool p_line = false;
   bool clause_seen = false; // Used for e a definition after clause
-  int matrix_cls_cnt = 0;
+  var_t matrix_cls_cnt = 0;
 
   char q_line = 'q';
   int q_alt = 0; // Using 1 based q_alt
@@ -344,8 +367,8 @@ void ReadDimacs(const std::string filename) {
       // Use Nat_1 based indexing
       qbf_variables.resize(no_of_vars + 1);
 
-      std::cout << "c\nc Found 'p cnf " << no_of_vars << ' ' << no_of_clauses
-                << "' header. \n";
+      // std::cout << "c\nc Found 'p cnf " << no_of_vars << ' ' << no_of_clauses
+      // << "' header. \n";
       break;
     }
 
@@ -442,17 +465,27 @@ void ReadDimacs(const std::string filename) {
 
       // Total four possible cases of the quant prefix
       if (clause_seen == false) {
-        if (q_alt == 1 && q_line == 'a') { // All Universal case
-          std::cout << "c Input formula is trivially false.\n";
-          std::exit(code(Error::trivial_false));
+        if (q_line == 'q') {
+          for (var_t i = 1; i <= no_of_vars; ++i) {
+            a_vars.push_back(i);
+          }
+        } else if (q_line == 'a') { // All Universal case
+          // for (int i = 1; i <= no_of_vars; ++i) {
+          //  a_vars.push_back(i);
+          // }
+          // std::cout << "c Input formula is trivially false.\n";
+          // std::exit(code(Error::trivial_false));
         } else if (q_alt == 1 && q_line == 'e') { // SAT case
           std::cout << "c Input formula is a propositional formula.\n";
           prop_fml = true;
-          // Exit the call. after this/r
-        } else if (q_alt == 2 && q_line == 'a') { // EA case
-          std::cout << "c Input formula is a ExistForall formula.\n";
-        } else if (q_alt == 2 && q_line == 'e') { // AE case
-          std::cout << "c Input formula is a ForallExists formula.\n";
+          // a_vars = e_vars;
+          if (a_vars.size() == 0) {
+            // Exit the call. after this/r
+          } else if (q_alt == 2 && q_line == 'a') { // EA case
+            std::cout << "c Input formula is a ExistForall formula.\n";
+          } else if (q_alt == 2 && q_line == 'e') { // AE case
+            std::cout << "c Input formula is a ForallExists formula.\n";
+          }
         }
       }
 
@@ -461,9 +494,15 @@ void ReadDimacs(const std::string filename) {
       if (clause_seen == true) {
         // It's a 2QBF Forall Exists case or the SAT case :)
         assert(q_alt <= 2);
-        assert(e_vars.size() + a_vars.size() <= no_of_vars);
-        for (lit_t e : e_vars) {
-          qbf_variables[e].initialise_qtype('e');
+        if (prop_fml == true) {
+          assert(e_vars.size() == a_vars.size());
+          assert(e_vars.size() <= no_of_vars);
+        } else {
+          // assert(e_vars.size() + a_vars.size() <= no_of_vars);
+          assert(a_vars.size() == no_of_vars);
+          for (lit_t e : e_vars) {
+            qbf_variables[e].quantype = 'e';
+          }
         }
       }
 
@@ -472,12 +511,13 @@ void ReadDimacs(const std::string filename) {
       cls->active = 1;
       extract_int(cls, line, matrix_cls_cnt);
       qbf_clauses.push_back(*cls);
+      /*
       if (qbf_clauses[matrix_cls_cnt].e_literals.size() == 0) {
         std::cout << "Clause with all universal literals. Trivially false.\n";
         std::exit(code(Error::trivial_false));
-      }
-      if (qbf_clauses[matrix_cls_cnt].e_literals.size() == 1)
-        unit_cls.push_back(matrix_cls_cnt);
+      } */
+      // if (qbf_clauses[matrix_cls_cnt].e_literals.size() == 1)
+      //  unit_cls.push_back(matrix_cls_cnt);
       ++matrix_cls_cnt;
       break;
     }
@@ -511,15 +551,7 @@ void ReadDimacs(const std::string filename) {
     avars_indx[l] = ida;
     ++ida;
   }
-}
-
-/* / Apply assignment application to the formula
-cld_t ApplyAssmnt(cld_t &Fml, const cls_t &ass) {
-  var_t sz = ass.size();
-  assert(sz >= 1);
-  for (var_t i = sz; i > 0; --i) {
-  }
-} */
+} // namespace
 
 void IncrementVarScore(lit_t l) {
   if (l > 0) {
@@ -532,19 +564,18 @@ void IncrementVarScore(lit_t l) {
 }
 
 // Compute the Heuristical Score of each variable
-var_t HeuristicScoreUpdate() {
+void HeuristicScoreUpdate() {
   for (lit_t a : a_vars) {
     assert(a > 0);
     if (qbf_variables[a].active == 0 || qbf_variables[a].active == 1) {
       // TODO: Require mapping the index and the value.
-      pos_var_score[avars_indx[a]] == 1;
-      pos_var_score[avars_indx[a]] == 1;
+      pos_var_score[avars_indx[a]] = 1;
     }
   }
 }
 
 // Compute the Heuristical Score of each variable
-var_t HeuristicScore() {
+void HeuristicScore() {
   std::fill(pos_var_score.begin(), pos_var_score.end(), 0);
   std::fill(neg_var_score.begin(), neg_var_score.end(), 0);
 
@@ -557,18 +588,19 @@ var_t HeuristicScore() {
     // Clauses where the variable occurs positive and negative
     int pidx = 0;
     sat_cls_set = qbf_variables[indx].pos_occ_cls;
-    for (int c = 0; c < qbf_clauses.size(); ++c) {
-      if (qbf_clauses[c].active == 0)
-        continue;
+    for (size_t c = 0; c < qbf_clauses.size(); ++c) {
       if (c == sat_cls_set[pidx]) {
         ++pidx;
         continue;
       }
+      if (qbf_clauses[c].active == 0)
+        continue;
       for (lit_t l : qbf_clauses[c].a_literals) {
         if (qbf_variables[std::abs(l)].active == 0 ||
             qbf_variables[std::abs(l)].active == 1)
           continue;
-        assert(0 <= pure_lit_score[avars_indx[std::abs(l)]] <= 3);
+        assert(0 <= pure_lit_score[avars_indx[std::abs(l)]] &&
+               pure_lit_score[avars_indx[std::abs(l)]] <= 3);
         if (pure_lit_score[avars_indx[std::abs(l)]] == 3)
           continue;
         if (l > 0) {
@@ -588,7 +620,7 @@ var_t HeuristicScore() {
       }
     }
     int pscore = 0;
-    for (int m = 0; m < pure_lit_score.size(); ++m) {
+    for (size_t m = 0; m < pure_lit_score.size(); ++m) {
       if (pure_lit_score[m] == 1 || pure_lit_score[m] == 2)
         ++pscore;
     }
@@ -604,18 +636,19 @@ var_t HeuristicScore() {
     // Clauses where the variable occurs positive and negative
     int nidx = 0;
     sat_cls_set = qbf_variables[indx].neg_occ_cls;
-    for (int c = 0; c < qbf_clauses.size(); ++c) {
-      if (qbf_clauses[c].active == 0)
-        continue;
+    for (size_t c = 0; c < qbf_clauses.size(); ++c) {
       if (c == sat_cls_set[nidx]) {
         ++nidx;
         continue;
       }
+      if (qbf_clauses[c].active == 0)
+        continue;
       for (lit_t l : qbf_clauses[c].a_literals) {
         if (qbf_variables[std::abs(l)].active == 0 ||
             qbf_variables[std::abs(l)].active == 1)
           continue;
-        assert(0 <= pure_lit_score[avars_indx[std::abs(l)]] <= 3);
+        assert(0 <= pure_lit_score[avars_indx[std::abs(l)]] &&
+               pure_lit_score[avars_indx[std::abs(l)]] <= 3);
         if (pure_lit_score[avars_indx[std::abs(l)]] == 3)
           continue;
         if (l > 0) {
@@ -635,21 +668,24 @@ var_t HeuristicScore() {
       }
     }
     int nscore = 0;
-    for (int m = 0; m < pure_lit_score.size(); ++m) {
+    for (size_t m = 0; m < pure_lit_score.size(); ++m) {
       if (pure_lit_score[m] == 1 || pure_lit_score[m] == 2)
         ++nscore;
     }
     neg_var_score[avars_indx[a_vars[i]]] = nscore;
   }
+
+  return;
 }
 
 // During elimination calulate the pre lits
-var_t PureLitElimScore() {
+void PureLitElimScore() {
   std::fill(pos_var_score.begin(), pos_var_score.end(), 0);
   std::fill(neg_var_score.begin(), neg_var_score.end(), 0);
 
   var_t total_active_cls = 0;
 
+  bool hidden_var = false;
   for (var_t i = 0; i < qbf_clauses.size(); ++i) {
     if (qbf_clauses[i].active != 1) {
       continue;
@@ -664,14 +700,10 @@ var_t PureLitElimScore() {
       }
     }
   }
-
-  if (total_active_cls == 0) {
-    formula_is_sat();
-  }
 }
 
 // Pure Literal Elimination
-void PureLitElim(cls_t &Impl_ass, cl_t &Impl_lvl, cl_t &Assgn_lits) {
+void PureLitElim(cls_t &Impl_ass, cl_t &Impl_lvl, const int ass_lit_size) {
   cl_t impl_vars;
   var_t pureCount = 0;
   PureLitElimScore();
@@ -679,12 +711,14 @@ void PureLitElim(cls_t &Impl_ass, cl_t &Impl_lvl, cl_t &Assgn_lits) {
     var_t indx = a_vars[i];
     if (qbf_variables[indx].active == 0 || qbf_variables[indx].active == 1)
       continue;
+    if (pos_var_score[avars_indx[indx]] == 0 &&
+        neg_var_score[avars_indx[indx]] == 0) {
+      continue;
+    }
     if (pos_var_score[avars_indx[indx]] == 0 ||
         neg_var_score[avars_indx[indx]] == 0) {
       if (pos_var_score[avars_indx[indx]] == 0) {
         impl_vars.push_back(a_vars[i]);
-        // Below is Incorrect> TODO avoid redoing this process in
-        // DataStructureUpdate
         qbf_variables[indx].active = 1;
       } else {
         impl_vars.push_back(-a_vars[i]);
@@ -695,14 +729,14 @@ void PureLitElim(cls_t &Impl_ass, cl_t &Impl_lvl, cl_t &Assgn_lits) {
     }
   }
   Impl_ass.push_back(impl_vars);
-  Impl_lvl.push_back(Assgn_lits.size());
+  Impl_lvl.push_back(ass_lit_size);
 
   return;
 }
 
 // -- Update Data Structure based on the chosen decision variable ---
-std::string DataStructureUpdate(cls_t &Impl_ass, cl_t &Impl_lvl,
-                                cl_t &Assgn_lits, lit_t dvar) {
+bool PropagateAssignment(cls_t &Impl_ass, cl_t &Impl_lvl,
+                         const int ass_lit_size, const lit_t dvar) {
   cl_t sat_cls_set, unsat_cls_set;
   if (dvar == 0)
     std::exit(code(Error::variable_value));
@@ -713,8 +747,16 @@ std::string DataStructureUpdate(cls_t &Impl_ass, cl_t &Impl_lvl,
   } else {
     qbf_variables[std::abs(dvar)].active = 0;
   }
+
   assert(active_vars > 0);
   --active_vars;
+
+  if (active_vars == 0) {
+    Impl_ass.push_back({});
+    Impl_lvl.push_back(ass_lit_size);
+    return false;
+  }
+
   // Clauses where the variable occurs positive and negative
   if (dvar > 0) {
     sat_cls_set = qbf_variables[std::abs(dvar)].pos_occ_cls;
@@ -731,67 +773,69 @@ std::string DataStructureUpdate(cls_t &Impl_ass, cl_t &Impl_lvl,
     if (qbf_clauses[c].active == 1) {
       assert(active_cls > 0);
       --active_cls;
+      if (qbf_clauses[c].satisfied_lvl == 0) {
+        // TODO: Check off by one error/Pure
+        qbf_clauses[c].satisfied_lvl = ass_lit_size;
+      }
     }
     qbf_clauses[c].active = 0;
   }
-  // Implemet early exit based on number of clauses/ i.e active_cls == 0
+
   if (active_cls == 0 || active_vars == 0) {
-    // We do not handle SAT formula checking for heuristic 4 and 5
-    unsat_bit = true;
-    return "UNSAT";
+    Impl_ass.push_back({});
+    Impl_lvl.push_back(ass_lit_size);
+    return false;
   }
 
-  PureLitElim(Impl_ass, Impl_lvl, Assgn_lits);
-}
+  PureLitElim(Impl_ass, Impl_lvl, ass_lit_size);
 
-void Reduction(cls_t &Impl_ass, cl_t &Impl_lvl, cl_t &Assgn_lits) {
-  PureLitElim(Impl_ass, Impl_lvl, Assgn_lits);
-}
-
-cls_t UnionAss(const cls_t &dec, const cls_t &impl) {
-  cls_t ass;
-  ass.reserve(dec.size() + impl.size()); // preallocate memory
-  ass.insert(ass.end(), dec.begin(), dec.end());
-  ass.insert(ass.end(), impl.begin(), impl.end());
-  return ass;
-}
-
-// Implement negation of the cls
-cl_t NegCls(cl_t &cls) {
-  cl_t neg_cls;
-  for (lit_t l : cls) {
-    neg_cls.push_back(-l);
+  if (active_cls == 0 || active_vars == 0) {
+    return false;
   }
-  return neg_cls;
+
+  return true;
 }
 
-var_t VariableSelection() {
+void Reduction(cls_t &Impl_ass, cl_t &Impl_lvl, const int ass_lit_size) {
+  PureLitElim(Impl_ass, Impl_lvl, ass_lit_size);
+}
+
+var_t LiteralSelection() {
   lit_t top_var = -1;
-  var_t top_var_cnt =
-      0; // be careful be update it when change the heuristic val
+  var_t top_var_cnt = 0;
   var_t max_pol;
+
   assert(pos_var_score.size() == neg_var_score.size());
+
   for (var_t i = 0; i < pos_var_score.size(); ++i) {
     if (qbf_variables[a_vars[i]].active == 0 ||
         qbf_variables[a_vars[i]].active == 1)
       continue;
     max_pol = pos_var_score[i] * neg_var_score[i];
-    // Degen case handling to select first variable
+
+    // Degen case: select the first unassigned variable
     if (max_pol == top_var_cnt && top_var == -1) {
       top_var_cnt = max_pol;
       top_var = i;
+      if (basic_var_selection == true) {
+        break;
+      }
     }
-    if (max_pol < top_var_cnt) {
+
+    if (max_pol <= top_var_cnt) {
       continue;
     } else {
       top_var_cnt = max_pol;
       top_var = i;
+      if (basic_var_selection == true) {
+        break;
+      }
     }
   }
+
   // If this is violated then the all vars are already assigned
   assert(top_var >= 0);
   return a_vars[top_var];
-  // return a_vars[avars_indx[top_var]];
 }
 
 // Look Ahead Heuristic
@@ -804,7 +848,7 @@ lit_t LookAhead() {
 
   HeuristicScore();
 
-  the_chosen_one = VariableSelection();
+  the_chosen_one = LiteralSelection();
 
   if (the_chosen_one == 0) {
     output(fname);
@@ -815,125 +859,130 @@ lit_t LookAhead() {
 }
 
 // BackTrack function that restore the header and the univ var
-void BackTrack(cls_t &Impl_ass, cl_t Impl_lvl, cl_t &Assgn_lits, int bl) {
+void BackTrack(cls_t &Impl_ass, cl_t &Impl_lvl, cl_t &Assgn_lits, var_t bl) {
   while (Assgn_lits.size() != bl) {
     cl_t sat_cls;
+
+    // Invariant is Impl_ass and Impl_lvl are same size
+    // Impl_ass has one more element than assgn_lits
+    assert(Impl_ass.size() == Impl_lvl.size());
+    assert(Impl_ass.size() == Assgn_lits.size() + 1);
+
     lit_t dlit = Assgn_lits.back();
     Assgn_lits.erase(Assgn_lits.end() - 1);
+
+    // Serious Design Bug: where you have an assignment and the actvity
+    qbf_variables[std::abs(dlit)].active = 2;
+
     ++active_vars; // Increase the count to reflect the bt
+
     if (dlit > 0) {
       sat_cls = qbf_variables[std::abs(dlit)].pos_occ_cls;
     } else {
       sat_cls = qbf_variables[std::abs(dlit)].neg_occ_cls;
     }
 
+    // Reset Function " revert the activity of the clause SAT by dlit
     for (var_t c : sat_cls) {
       if (qbf_clauses[c].active == true)
         continue;
-      if (qbf_clauses[c].rst_lvl == bl) {
+      if (qbf_clauses[c].satisfied_lvl >= bl) {
         qbf_clauses[c].active = true;
-        qbf_clauses[c].rst_lvl = 0;
+        ++active_cls;
+        qbf_clauses[c].satisfied_lvl = 0; // Not SAT by the assignemnet
       }
     }
 
-    cl_t impl_ass = Impl_ass.back();
     lit_t impl_lvl = Impl_lvl.back();
+    cl_t impl_ass = Impl_ass.back();
     Impl_lvl.erase(Impl_lvl.end() - 1);
     Impl_ass.erase(Impl_ass.end() - 1);
 
-    assert(impl_lvl == bl); // TODO: Check off by one error
-
+    // Restore the implied literal assignments
     for (lit_t l : impl_ass) {
-      qbf_variables[l].active = 2;
-      ++active_vars; // Increase the count to reflect the bt
+      qbf_variables[std::abs(l)].active = 2;
+      ++active_vars;
     }
-
-    --bl;
   }
 }
 
 // ---- Generate Subformulas -------------
 // #ifdef USE_SAT_LEAVES
-int TreeSize(cls_t &Impl_ass, cl_t Impl_lvl, cl_t &Assgn_lits) {
+int TreeSize(cls_t &Impl_ass, cl_t &Impl_lvl, cl_t &Assgn_lits) {
   int tSize = 0;
-  // Step 1: Pure Lit Elimination
-  Reduction(Impl_ass, Impl_lvl, Assgn_lits);
-  // PureLitElim(Impl_ass, Impl_lvl, Assgn_lits);
 
-  // Step 2: If the unit propogation returns UNSAT exit
+  Reduction(Impl_ass, Impl_lvl, Assgn_lits.size());
+
   if (active_cls == 0 || active_vars == 0) {
     std::cout << "\nc The Formula is Solvable without LookAhead.\n";
     return 0; // Input formula is false
   }
 
-  // Step 3. Perform Lookahead
-  lit_t l = LookAhead() * -1; // Top node of the Search Tree
-  Assgn_lits.push_back(l);
+  // Top Literal node of the Search Tree
+  lit_t look_ahead_lit = -LookAhead();
+  Assgn_lits.push_back(look_ahead_lit);
 
-  // int psize = qbf_variables[std::abs(l)].pos_occ_cls.size();
+  // Top Literal is assigned False
   varSwitch.push_back(0);
   bool root_flipped = false;
 
-  // Step 4: Iteration call of the loop. Untill all the combinations are
-  // tried
-  while (Assgn_lits.size() != 0) { // Remaining tree
-    // Step 1: Pure Lit Elim
-    // PureLitElim(Impl_ass, Impl_lvl, Assgn_lits);
-
-    // Step 2: Cuttoff Criteria 1: Cuttoff Heuristic
-    std::string dupdate =
-        DataStructureUpdate(Impl_ass, Impl_lvl, Assgn_lits, l);
-
-    // What do mean if a branch is SAT?
-    // Just count as a leaf node
-    if (dupdate == "UNSAT" || dupdate == "SAT") {
+  while (Assgn_lits.size() != 0) {
+    bool leafnode = PropagateAssignment(Impl_ass, Impl_lvl, Assgn_lits.size(),
+                                        look_ahead_lit);
+    // Leaf node is encountered
+    if (leafnode == false) {
       ++tSize;
-      // lit_t rvar = Assgn_lits.back();
-      int alit_size = Assgn_lits.size();
+
+      var_t alit_size = Assgn_lits.size();
       assert(alit_size == varSwitch.size()); // Invariant
-      // Assgn_lits.erase(Assgn_lits.end() - 1);
+
       while (varSwitch.back() == 1) { // Tried both polarity
         varSwitch.erase(varSwitch.end() - 1);
         --alit_size;
-        // Assgn_lits.erase(Assgn_lits.end() - 1);
       }
+
       assert(alit_size == varSwitch.size());
-      if (alit_size < 0) // If it's 0 check the off by one
+      if (alit_size <= 0)
         break;
 
-      // Backtrack to the previous decisioon level
-      BackTrack(Impl_ass, Impl_lvl, Assgn_lits, alit_size);
+      lit_t btvar = Assgn_lits[alit_size - 1];
 
-      // Switch the polarity of the variable: True branch taken
+      // Degen Case: Top Lit Node (assigned \top) is flipped
+      // We have tried both the polarities of the top variable
+      if (alit_size == 1 && varSwitch[0] > 0) {
+        root_flipped = true;
+        break;
+      }
+
+      BackTrack(Impl_ass, Impl_lvl, Assgn_lits, alit_size - 1);
+
+      // Switch the polarity of the variable: True branch is taken
       assert(varSwitch.back() == 0);
       varSwitch.erase(varSwitch.end() - 1);
       varSwitch.push_back(1);
 
       // Revert back the polarity of the chosen variable
-      l = Assgn_lits.back();
-      Assgn_lits.erase(Assgn_lits.end() - 1);
-      // Assgn_lits.push_back(-Assgn_lits[alit_size]);
-      Assgn_lits.push_back(-l);
-      l *= -1;
+      look_ahead_lit = -btvar;
+      Assgn_lits.push_back(look_ahead_lit);
       continue;
     }
 
-    // Step 3. Perform Lookahead
-    l = LookAhead();
-    Assgn_lits.push_back(l);
+    look_ahead_lit = -LookAhead();
+    Assgn_lits.push_back(look_ahead_lit);
+    varSwitch.push_back(0);
   }
   return tSize;
 }
 // #endif //
 
-// --- Parse Commandline argument ---
+// --- Parse Commandline argument
 void show_usage() noexcept {
   std::cout << "2QBFCC.cpp [version 0.1]. (C) Copyright 2020 "
                "\nUsage: ./2QBFCC [filename]\n";
   std::exit(0);
 }
 
-// --- Printing basic information about the tool ---
+// --- Printing basic information about the tool
 static void banner() {
   std::cout << "c 2QBF Cube and Conquer based Heuristic.\n"
                "c Version: "
@@ -941,7 +990,7 @@ static void banner() {
             << "\nc Copyright (c) 2020 Johannes Kepler University.\n";
 }
 
-// --- File existence check ----//
+// --- File existence check
 bool fileExists(const std::string &name) {
   struct stat buffer;
   return (stat(name.c_str(), &buffer) == 0);
@@ -950,7 +999,6 @@ bool fileExists(const std::string &name) {
 } // namespace
 
 int main(const int argc, const char *const argv[]) {
-  // ---------- [Command Line Arguments Parsing Starts] ------------
   if (argc == 1 || argc > 2) {
     std::cout << "Invalid number of arguments.\n";
     std::exit(code(Error::invalid_args_count));
@@ -962,23 +1010,15 @@ int main(const int argc, const char *const argv[]) {
     version_information();
   if (filename == "-h" or filename == "--help")
     show_usage();
-  // [Command Line Arguments Parsing Ends]
 
-  banner();
+  // banner();
 
-  // [Parsing Input Starts]
   ReadDimacs(filename);
-  // [Parsing Input Ends]
 
-  // [2QBF-Heuristic Algorithm Starts]
   cls_t Impl_ass;
   cl_t Assgn_lits, Impl_lvl;
 
-  // [Cube Phase Starts]
   no_of_leaves = TreeSize(Impl_ass, Impl_lvl, Assgn_lits);
-  // [Cube Phase Ends]
-
-  // [2QBF-Heuristic Algorithm Ends]
 
   output(filename);
 
